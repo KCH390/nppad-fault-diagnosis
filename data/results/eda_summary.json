@@ -1,0 +1,131 @@
+{
+  "total_samples": 1217,
+  "accident_types": [
+    {
+      "accident_type": "ATWS",
+      "sample_count": 1,
+      "min_duration_seconds": 5790.0,
+      "mean_duration_seconds": 5790.0,
+      "max_duration_seconds": 5790.0
+    },
+    {
+      "accident_type": "FLB",
+      "sample_count": 100,
+      "min_duration_seconds": 1600.0,
+      "mean_duration_seconds": 2190.7,
+      "max_duration_seconds": 5520.0
+    },
+    {
+      "accident_type": "LACP",
+      "sample_count": 1,
+      "min_duration_seconds": 5030.0,
+      "mean_duration_seconds": 5030.0,
+      "max_duration_seconds": 5030.0
+    },
+    {
+      "accident_type": "LLB",
+      "sample_count": 101,
+      "min_duration_seconds": 5370.0,
+      "mean_duration_seconds": 5533.762376237623,
+      "max_duration_seconds": 5570.0
+    },
+    {
+      "accident_type": "LOCA",
+      "sample_count": 100,
+      "min_duration_seconds": 3010.0,
+      "mean_duration_seconds": 3891.7,
+      "max_duration_seconds": 4740.0
+    },
+    {
+      "accident_type": "LOCAC",
+      "sample_count": 100,
+      "min_duration_seconds": 3660.0,
+      "mean_duration_seconds": 4507.6,
+      "max_duration_seconds": 5430.0
+    },
+    {
+      "accident_type": "LOF",
+      "sample_count": 1,
+      "min_duration_seconds": 5110.0,
+      "mean_duration_seconds": 5110.0,
+      "max_duration_seconds": 5110.0
+    },
+    {
+      "accident_type": "LR",
+      "sample_count": 99,
+      "min_duration_seconds": 5500.0,
+      "mean_duration_seconds": 5550.50505050505,
+      "max_duration_seconds": 5570.0
+    },
+    {
+      "accident_type": "MD",
+      "sample_count": 100,
+      "min_duration_seconds": 5380.0,
+      "mean_duration_seconds": 5892.0,
+      "max_duration_seconds": 6370.0
+    },
+    {
+      "accident_type": "Normal",
+      "sample_count": 1,
+      "min_duration_seconds": 3010.0,
+      "mean_duration_seconds": 3010.0,
+      "max_duration_seconds": 3010.0
+    },
+    {
+      "accident_type": "RI",
+      "sample_count": 100,
+      "min_duration_seconds": 100.0,
+      "mean_duration_seconds": 2009.9,
+      "max_duration_seconds": 3180.0
+    },
+    {
+      "accident_type": "RW",
+      "sample_count": 100,
+      "min_duration_seconds": 1540.0,
+      "mean_duration_seconds": 1828.8,
+      "max_duration_seconds": 5540.0
+    },
+    {
+      "accident_type": "SGATR",
+      "sample_count": 100,
+      "min_duration_seconds": 3990.0,
+      "mean_duration_seconds": 4576.0,
+      "max_duration_seconds": 5670.0
+    },
+    {
+      "accident_type": "SGBTR",
+      "sample_count": 110,
+      "min_duration_seconds": 4140.0,
+      "mean_duration_seconds": 4650.545454545455,
+      "max_duration_seconds": 5560.0
+    },
+    {
+      "accident_type": "SLBIC",
+      "sample_count": 101,
+      "min_duration_seconds": 1740.0,
+      "mean_duration_seconds": 2966.5346534653463,
+      "max_duration_seconds": 5500.0
+    },
+    {
+      "accident_type": "SLBOC",
+      "sample_count": 100,
+      "min_duration_seconds": 4210.0,
+      "mean_duration_seconds": 4743.8,
+      "max_duration_seconds": 5600.0
+    },
+    {
+      "accident_type": "SP",
+      "sample_count": 1,
+      "min_duration_seconds": 5140.0,
+      "mean_duration_seconds": 5140.0,
+      "max_duration_seconds": 5140.0
+    },
+    {
+      "accident_type": "TT",
+      "sample_count": 1,
+      "min_duration_seconds": 7200.0,
+      "mean_duration_seconds": 7200.0,
+      "max_duration_seconds": 7200.0
+    }
+  ]
+}

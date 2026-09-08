@@ -1,0 +1,9 @@
+/target
+
+# The raw NPPAD dataset is ~600MB — far too large to check into git, and it's
+# already publicly hosted upstream. data/raw/ is where you fetch it into
+# locally (see README "Getting the data"), but it never gets committed.
+# data/results/ (EDA summaries, charts) is NOT ignored — those are small,
+# checked-in, generated-but-tracked outputs, same convention as your other
+# projects.
+/data/raw/

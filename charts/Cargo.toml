@@ -1,0 +1,27 @@
+[package]
+name = "charts"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "eda-charts"
+path = "src/main.rs"
+
+[dependencies]
+# `path = "../core"` is a "path dependency" — instead of pulling `core` from
+# crates.io, Cargo just points straight at the sibling folder in this
+# workspace. This is how the `charts` crate reuses your data-loading and EDA
+# code without copy-pasting it: `charts` depends on `core` as a library, and
+# gets everything under `pub mod` in core/src/lib.rs.
+core = { path = "../core" }
+
+# `default-features = false` + an explicit feature list keeps this as lean
+# as plotters gets. We only need SVG output (no GUI backend, no bitmap
+# rasterization) and basic line/bar series. Crucially, we're avoiding
+# plotters' font-rendering ("ttf"/font-kit) features entirely — the SVG
+# backend emits plain `<text>` elements that any browser or image viewer
+# renders using ITS OWN fonts, so we never need a system font library
+# installed to build or run this. That sidesteps the exact class of
+# toolchain problem that has blocked font-dependent crates before.
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series"] }
+anyhow = "1.0"
