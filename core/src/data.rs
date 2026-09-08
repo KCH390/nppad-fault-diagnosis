@@ -5,17 +5,30 @@
 //! is a folder tree: one subfolder per accident type (LOCA, SGATR, Normal,
 //! ...), and inside each, one CSV per "severity" instance of that accident
 //! (e.g. `Operation_csv_data/LOCA/37.csv` is a 37%-break-size loss-of-coolant
-//! run). Every CSV has the same 97 columns: `TIME` plus 96 named sensor
-//! readings (temperatures, pressures, flows, radiation monitors, etc.),
-//! sampled every 10 simulated seconds. Runs are NOT all the same length —
-//! that's a real, documented quirk of this dataset (see the Phase 1 EDA
-//! notes in the README), not a bug in this loader.
+//! run). Almost every CSV has the same 97 columns: `TIME` plus 96 named
+//! sensor readings (temperatures, pressures, flows, radiation monitors,
+//! etc.), sampled every 10 simulated seconds. Runs are NOT all the same
+//! length — that's a real, documented quirk of this dataset (see the Phase 1
+//! EDA notes in the README), not a bug in this loader.
+//!
+//! "ALMOST" every CSV, because of a second real quirk found while building
+//! Phase 2: 25 of the 101 `SLBIC` files have **100** columns instead of 97
+//! — three extra sensors (`WPCS`, `WPMU`, `WPFW`) appended after the
+//! standard set. Every other accident type, and the other 76 SLBIC files,
+//! use the standard 97. Rather than let that surface as a downstream
+//! "mismatched row length" error in feature extraction (which is exactly
+//! how it WAS first found), this loader determines the dataset's most
+//! common ("canonical") column schema up front and normalizes every file
+//! to it — dropping the rare extra columns so every `Sample` has a
+//! consistent, comparable shape. See `determine_canonical_sensor_schema`
+//! below for how.
 //!
 //! This file turns that folder tree into a `Vec<Sample>` — one `Sample` per
 //! CSV file — that the rest of the project (EDA, feature engineering,
 //! models, charts) can all share.
 
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// One simulated accident run: everything from a single CSV file.
@@ -43,12 +56,12 @@ pub struct Sample {
     pub severity_id: String,
     /// The `TIME` column, in seconds, one entry per row.
     pub time_seconds: Vec<f64>,
-    /// The 96 sensor column names, in the order they appear in the CSV
-    /// header (e.g. "P", "TAVG", "THA", ...). Every `Sample` has the same
-    /// `sensor_names`, since every NPPAD CSV shares the same schema — we
-    /// still store it per-sample rather than as a global constant so that
-    /// downstream code doesn't have to reach into a different module just
-    /// to know which column is which.
+    /// The canonical 96 sensor column names, in the dataset's dominant
+    /// column order (e.g. "P", "TAVG", "THA", ...). EVERY `Sample` has
+    /// exactly this same `sensor_names` list — even the 25 SLBIC files that
+    /// natively have 3 extra columns get normalized down to it during
+    /// loading, so nothing downstream ever has to special-case a variable
+    /// number of sensors.
     pub sensor_names: Vec<String>,
     /// The sensor readings themselves, as a row-major matrix:
     /// `values[row_index][sensor_index]`. `values.len() ==
@@ -131,8 +144,70 @@ pub fn discover_accident_types(root: impl AsRef<Path>) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Load every CSV under `root/<accident_type>/` into a `Vec<Sample>`.
-pub fn load_accident_type(root: impl AsRef<Path>, accident_type: &str) -> Result<Vec<Sample>> {
+/// Scan every CSV under `root` and return the most common set of sensor
+/// column names (i.e. every column except `TIME`) — the "canonical schema"
+/// every `Sample` gets normalized to.
+///
+/// This only reads each file's HEADER row, not its data — `csv::Reader`
+/// only actually reads as much of the file as you ask it to, and
+/// `.headers()` asks for just the first line. Scanning 1,217 headers this
+/// way is fast; it's a cheap up-front pass to protect the much larger main
+/// loading pass from ever hitting a surprise mismatched schema again.
+fn determine_canonical_sensor_schema(
+    root: &Path,
+    accident_types: &[String],
+) -> Result<Vec<String>> {
+    // `HashMap<Vec<String>, usize>` — keying by the ENTIRE header (as a
+    // Vec of column names), counting how many files had exactly that
+    // header. Rust lets you use a `Vec<String>` as a HashMap key as long as
+    // it implements `Eq` and `Hash`, which it does automatically here
+    // because `String` implements both and `Vec<T>` implements them
+    // whenever `T` does. Two files with the SAME columns in the SAME order
+    // hash and compare equal, even though they're different `Vec`
+    // instances in memory — value equality, not identity, which is what we
+    // want here.
+    let mut header_counts: HashMap<Vec<String>, usize> = HashMap::new();
+
+    for accident_type in accident_types {
+        let dir = root.join(accident_type);
+        let entries = std::fs::read_dir(&dir)
+            .with_context(|| format!("reading accident directory {dir:?}"))?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("csv") {
+                let mut reader = csv::Reader::from_path(&path)?;
+                let headers = reader.headers()?.clone();
+                let sensor_names: Vec<String> =
+                    headers.iter().skip(1).map(|s| s.to_string()).collect();
+                // `.entry(...).or_insert(0)` is the standard Rust idiom for
+                // "get this key's value, inserting a default first if it's
+                // not there yet" — equivalent to Python's
+                // `dict.setdefault(key, 0)` followed by an increment.
+                *header_counts.entry(sensor_names).or_insert(0) += 1;
+            }
+        }
+    }
+
+    // `.into_iter().max_by_key(...)` consumes the HashMap and finds the
+    // entry with the largest count — the most common header wins as our
+    // canonical schema. `.map(...)` then discards the count, keeping just
+    // the winning column-name list.
+    header_counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(sensor_names, _)| sensor_names)
+        .context("no CSV files found while determining canonical sensor schema")
+}
+
+/// Load every CSV under `root/<accident_type>/` into a `Vec<Sample>`,
+/// normalizing every file's columns to `canonical_sensors`.
+pub fn load_accident_type(
+    root: impl AsRef<Path>,
+    accident_type: &str,
+    canonical_sensors: &[String],
+) -> Result<Vec<Sample>> {
     let dir = root.as_ref().join(accident_type);
     let mut samples = Vec::new();
 
@@ -154,7 +229,7 @@ pub fn load_accident_type(root: impl AsRef<Path>, accident_type: &str) -> Result
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "unknown".to_string());
 
-            let sample = load_sample_csv(&path, accident_type, &severity_id)
+            let sample = load_sample_csv(&path, accident_type, &severity_id, canonical_sensors)
                 .with_context(|| format!("loading sample {path:?}"))?;
             samples.push(sample);
         }
@@ -163,14 +238,16 @@ pub fn load_accident_type(root: impl AsRef<Path>, accident_type: &str) -> Result
     Ok(samples)
 }
 
-/// Load every accident type under `root` into one flat `Vec<Sample>`.
+/// Load every accident type under `root` into one flat `Vec<Sample>`, all
+/// normalized to the dataset's dominant sensor schema.
 pub fn load_dataset(root: impl AsRef<Path>) -> Result<Vec<Sample>> {
     let root = root.as_ref();
     let accident_types = discover_accident_types(root)?;
+    let canonical_sensors = determine_canonical_sensor_schema(root, &accident_types)?;
     let mut all_samples = Vec::new();
 
     for accident_type in &accident_types {
-        let mut samples = load_accident_type(root, accident_type)?;
+        let mut samples = load_accident_type(root, accident_type, &canonical_sensors)?;
         // `append` moves every element out of `samples` and into
         // `all_samples`, leaving `samples` empty — cheaper than `.clone()`
         // since we don't need the original `samples` Vec afterward.
@@ -180,8 +257,15 @@ pub fn load_dataset(root: impl AsRef<Path>) -> Result<Vec<Sample>> {
     Ok(all_samples)
 }
 
-/// Parse a single NPPAD CSV file into a `Sample`.
-fn load_sample_csv(path: &PathBuf, accident_type: &str, severity_id: &str) -> Result<Sample> {
+/// Parse a single NPPAD CSV file into a `Sample`, projecting its columns
+/// onto `canonical_sensors` (dropping any extras, erroring if any expected
+/// canonical column is unexpectedly missing).
+fn load_sample_csv(
+    path: &PathBuf,
+    accident_type: &str,
+    severity_id: &str,
+    canonical_sensors: &[String],
+) -> Result<Sample> {
     // `csv::Reader` handles the fiddly parts of CSV parsing (quoted fields,
     // different line endings, etc.) for us — this is the "crates for
     // plumbing" half of the dependency philosophy. `from_path` opens the
@@ -191,13 +275,44 @@ fn load_sample_csv(path: &PathBuf, accident_type: &str, severity_id: &str) -> Re
     // `.headers()?` gives us the first row ("TIME,P,TAVG,...") as a
     // `csv::StringRecord`. We clone it into an owned `Vec<String>` because
     // the `reader` object (and the borrow of its headers) won't outlive
-    // this function, but we need `sensor_names` to live on inside the
-    // `Sample` we return.
+    // this function.
     let headers = reader.headers()?.clone();
-    let sensor_names: Vec<String> = headers.iter().skip(1).map(|s| s.to_string()).collect();
-    // `.skip(1)` drops the "TIME" column from `sensor_names`, since we track
-    // time separately in `Sample::time_seconds` rather than mixing it into
-    // the numeric sensor matrix.
+    let file_sensor_names: Vec<String> = headers.iter().skip(1).map(|s| s.to_string()).collect();
+
+    // For every CANONICAL sensor name, find where it lives in THIS file's
+    // header. Almost always this is a no-op identity mapping (the file's
+    // columns already match canonical order exactly); for the 25 SLBIC
+    // files with 3 extra trailing columns, this naturally skips those
+    // extras, because we're only ever looking up canonical names — nothing
+    // asks "what's in column 97?", so an unexpected column 98/99/100 just
+    // never gets read.
+    let mut column_indices = Vec::with_capacity(canonical_sensors.len());
+    for canonical_name in canonical_sensors {
+        let idx = file_sensor_names
+            .iter()
+            .position(|n| n == canonical_name)
+            .with_context(|| {
+                format!(
+                    "file {path:?} is missing expected sensor column {canonical_name:?} \
+                     (it has {} sensor columns; canonical schema has {})",
+                    file_sensor_names.len(),
+                    canonical_sensors.len()
+                )
+            })?;
+        column_indices.push(idx);
+    }
+
+    if file_sensor_names.len() > canonical_sensors.len() {
+        // A visible note, not a silent drop — this is exactly the kind of
+        // thing that should be easy to notice while reading loader output,
+        // even though it's expected and handled correctly.
+        eprintln!(
+            "note: {path:?} has {} extra sensor column(s) beyond the canonical {}; \
+             extras are dropped so every Sample has a consistent schema (see README)",
+            file_sensor_names.len() - canonical_sensors.len(),
+            canonical_sensors.len()
+        );
+    }
 
     let mut time_seconds = Vec::new();
     let mut values = Vec::new();
@@ -219,24 +334,24 @@ fn load_sample_csv(path: &PathBuf, accident_type: &str, severity_id: &str) -> Re
             .with_context(|| format!("parsing TIME value {time_str:?}"))?;
         time_seconds.push(time_val);
 
-        // Parse every remaining column (index 1..) into f64. This is a
-        // fairly dense iterator chain, so here's what each link does:
-        //   record.iter()        -> iterate over every field in the row as &str
-        //   .skip(1)             -> drop the TIME field, already handled above
-        //   .map(|s| s.parse())  -> attempt String -> f64 conversion per field
-        //   .collect::<Result<Vec<f64>, _>>() -> gather results into one Vec,
-        //                          but if ANY field failed to parse, this whole
-        //                          expression short-circuits to that single Err.
-        // That last step is a very idiomatic Rust trick: collecting an
-        // iterator of `Result`s into a `Result` of a collection, so a
-        // single bad field cleanly aborts the whole row instead of us
-        // needing to check each one by hand.
-        let row: Vec<f64> = record
+        // Walk `column_indices` (one entry per CANONICAL sensor, holding
+        // that sensor's position in THIS file) rather than every field in
+        // the row — this is what actually performs the projection down to
+        // the canonical schema. `record.get(idx + 1)` (the `+1` skips back
+        // over the TIME column we already handled above) fetches exactly
+        // the field we want, wherever it happens to sit in this
+        // particular file's row.
+        let row: Vec<f64> = column_indices
             .iter()
-            .skip(1)
-            .map(|s| s.parse::<f64>())
-            .collect::<std::result::Result<Vec<f64>, _>>()
-            .with_context(|| format!("parsing sensor row at TIME={time_val}"))?;
+            .map(|&idx| {
+                let field = record
+                    .get(idx + 1)
+                    .with_context(|| format!("row missing expected column at index {idx}"))?;
+                field
+                    .parse::<f64>()
+                    .with_context(|| format!("parsing value {field:?} at TIME={time_val}"))
+            })
+            .collect::<Result<Vec<f64>>>()?;
         values.push(row);
     }
 
@@ -244,7 +359,8 @@ fn load_sample_csv(path: &PathBuf, accident_type: &str, severity_id: &str) -> Re
         accident_type: accident_type.to_string(),
         severity_id: severity_id.to_string(),
         time_seconds,
-        sensor_names,
+        sensor_names: canonical_sensors.to_vec(),
         values,
     })
 }
+

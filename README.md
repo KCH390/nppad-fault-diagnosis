@@ -53,19 +53,25 @@ You should end up with `data/raw/Operation_csv_data/<ACCIDENT_TYPE>/<severity>.c
 
 ```
 Cargo.toml          workspace manifest (core + charts members)
-core/                dependency-light: data loading, EDA, CLI (default cargo run/build target)
+core/                dependency-light: data loading, EDA, features, CLIs
   Cargo.toml
-  src/lib.rs         declares the data and eda modules as this crate's public library
-  src/data.rs        parses the NPPAD CSVs into a Vec<Sample>
+  src/lib.rs         declares data/eda/features as this crate's public library
+  src/data.rs        parses NPPAD CSVs into a Vec<Sample>, normalized to one canonical sensor schema
   src/eda.rs         class-balance and run-duration statistics over a Vec<Sample>
-  src/main.rs        CLI: load data, print + save the Phase 1 EDA summary
+  src/features.rs    rolling-window feature engineering (mean/std/slope per sensor, run-aware)
+  src/main.rs        binary "nppad-fault-diagnosis" (default): Phase 1 EDA summary
+  src/bin/
+    extract_features.rs   binary "extract_features": Phase 2 windowed-feature extraction
 charts/              isolated: everything that depends on `plotters` lives here, not in core
   Cargo.toml
-  src/lib.rs         the actual chart-drawing functions (bar chart, histogram, multi-line overlay)
-  src/main.rs        loads data via core, generates the three Phase 1 charts
+  src/lib.rs         chart-drawing functions (bar chart, histogram, multi-line overlay)
+  src/main.rs        binary "eda-charts" (default): the three Phase 1 charts
+  src/bin/
+    feature_charts.rs      binary "feature_charts": the two Phase 2 charts
 data/
   raw/               gitignored — fetched locally per "Getting the data" above
-  results/           checked in — eda_summary.json + charts/*.svg
+  features/          gitignored — Phase 2's windowed-feature CSV (~450MB, regenerable)
+  results/           checked in — eda_summary.json, feature_summary.json, charts/*.svg
 ```
 
 ## How to run
@@ -73,11 +79,15 @@ data/
 From the workspace root, after fetching the data:
 
 ```
-cargo run                # runs core: prints + saves the Phase 1 EDA summary
-cargo run -p charts      # runs charts: generates the three Phase 1 SVG charts
+cargo run                                     # core, default binary: Phase 1 EDA summary
+cargo run --bin extract_features              # core: Phase 2 windowed-feature extraction
+cargo run --bin extract_features -- 10 5      # same, with window_size=10 rows, stride=5 rows
+cargo run -p charts                           # charts, default binary: the three Phase 1 charts
+cargo run -p charts --bin feature_charts      # charts: the two Phase 2 charts
 ```
 
-Both write into `data/results/`.
+All of these write into `data/results/` (and `extract_features` additionally
+writes the large intermediate `data/features/windows.csv`).
 
 ## Phase 1 findings
 
@@ -114,10 +124,42 @@ smoothed over:
   successful scram. This is a genuinely useful diagnostic signal, and a
   good sanity check that the loader and sensor mapping are correct.
 
+## Phase 2 findings
+
+- **25 of 101 `SLBIC` files have a different schema than everything else.**
+  Most NPPAD CSVs have 97 columns (`TIME` + 96 sensors). 25 `SLBIC` files
+  have **100** — three extra trailing columns (`WPCS`, `WPMU`, `WPFW`) that
+  appear nowhere else in the dataset. This first surfaced as a hard CSV
+  write error ("found record with 301 fields, but the previous record has
+  292 fields") the first time `extract_features` ran — a real bug caught by
+  actually running the pipeline against the full dataset, not a
+  hypothetical edge case. `data.rs` now determines the dataset's most
+  common ("canonical") 96-sensor schema up front and normalizes every file
+  to it, logging a note wherever it has to drop extra columns. Every
+  `Sample` is guaranteed to have the same `sensor_names` and feature-vector
+  length as a result.
+- **Windowing does not just carry over Phase 1's class imbalance — it
+  reshapes it, and in the same direction.** Compare
+  `class_balance.svg` (Phase 1, raw sample counts) with
+  `window_class_balance.svg` (Phase 2, window counts): the "Other"-class
+  accident types (ATWS, LACP, SP — one raw sample each) end up with only
+  ~150-200 windows, while "Severity"-class types like MD and LOCA — already
+  ~100x more raw samples — produce tens of thousands of windows each,
+  because they also tend to run longer. The imbalance Phase 3's baseline
+  model has to deal with is worse after windowing than the raw sample
+  counts alone would suggest.
+- **No accident type produced zero windows at the chosen defaults**
+  (`window_size=5` rows / 50s, `stride=3` rows / 30s) — worth checking
+  explicitly given the shortest run in the whole dataset is 11 rows (RI,
+  ~100s); see `accident_types_with_zero_windows` in
+  `data/results/feature_summary.json`, which is empty. A larger
+  `window_size` could still produce zero windows for that run; the CLI
+  warns explicitly if that ever happens for any accident type.
+
 ## Phase roadmap
 
-1. **Data & workspace setup** *(this phase)* — loading, EDA, workspace scaffolding
-2. **Feature engineering** — rolling-window features per sensor, run-aware
+1. **Data & workspace setup** — loading, EDA, workspace scaffolding
+2. **Feature engineering** *(this phase)* — rolling-window features per sensor, run-aware
 3. **Baseline classification** — `linfa`/`smartcore`, macro F1 + confusion matrix over raw accuracy
 4. **From-scratch classifier** — extend CART/boosting code from C-MAPSS to multi-class
 5. **Physics module** — hand-rolled point reactor kinetics (delayed-neutron ODEs)

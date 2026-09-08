@@ -6,11 +6,13 @@
 //! so that the `charts` crate (in Phase 1's charting binary) can reuse the
 //! exact same data-loading and EDA code instead of duplicating it.
 //!
-//! `pub mod data;` and `pub mod eda;` below do two things at once:
-//! 1. Tell Rust to compile `src/data.rs` and `src/eda.rs` as submodules of
-//!    this crate (the filename becomes the module name).
+//! `pub mod data;`, `pub mod eda;`, and `pub mod features;` below do two
+//! things at once:
+//! 1. Tell Rust to compile `src/data.rs`, `src/eda.rs`, and `src/features.rs`
+//!    as submodules of this crate (the filename becomes the module name).
 //! 2. Mark them `pub` (public) so code outside this crate — like the
-//!    `charts` crate — can call `core::data::...` and `core::eda::...`.
+//!    `charts` crate, or this crate's own `src/bin/` binaries — can call
+//!    `core::data::...`, `core::eda::...`, and `core::features::...`.
 //!
 //! If we left off `pub`, the modules would still compile, but only code
 //! *inside* the `core` crate could see them. This is Rust's privacy system:
@@ -20,3 +22,5 @@
 
 pub mod data;
 pub mod eda;
+pub mod features;
+

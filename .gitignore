@@ -7,3 +7,10 @@
 # checked-in, generated-but-tracked outputs, same convention as your other
 # projects.
 /data/raw/
+
+# data/features/ holds the Phase 2 windowed-feature CSV (~450MB,
+# 160k+ rows). It's fully deterministic from data/raw/ + core/src/features.rs
+# and core/src/bin/extract_features.rs, so — same reasoning as data/raw/ —
+# it's a regenerable intermediate, not something to commit. Only its small
+# summary (data/results/feature_summary.json) is checked in.
+/data/features/

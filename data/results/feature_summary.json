@@ -1,0 +1,80 @@
+{
+  "window_size_rows": 5,
+  "stride_rows": 3,
+  "total_windows": 163040,
+  "windows_per_accident_type": [
+    [
+      "ATWS",
+      192
+    ],
+    [
+      "FLB",
+      7240
+    ],
+    [
+      "LACP",
+      167
+    ],
+    [
+      "LLB",
+      18563
+    ],
+    [
+      "LOCA",
+      12909
+    ],
+    [
+      "LOCAC",
+      14962
+    ],
+    [
+      "LOF",
+      170
+    ],
+    [
+      "LR",
+      18252
+    ],
+    [
+      "MD",
+      19576
+    ],
+    [
+      "Normal",
+      100
+    ],
+    [
+      "RI",
+      6641
+    ],
+    [
+      "RW",
+      6030
+    ],
+    [
+      "SGATR",
+      15185
+    ],
+    [
+      "SGBTR",
+      16977
+    ],
+    [
+      "SLBIC",
+      9919
+    ],
+    [
+      "SLBOC",
+      15747
+    ],
+    [
+      "SP",
+      171
+    ],
+    [
+      "TT",
+      239
+    ]
+  ],
+  "accident_types_with_zero_windows": []
+}
