@@ -61,7 +61,7 @@ cargo update -p noisy_float --precise 0.2.0
 ## Workspace structure
 
 ```
-Cargo.toml          workspace manifest (core + charts + models members)
+Cargo.toml          workspace manifest (core + charts + models + physics members)
 core/                dependency-light: data loading, EDA, features, splitting, CLIs
   Cargo.toml
   src/lib.rs         declares data/eda/features/split as this crate's public library
@@ -80,6 +80,7 @@ charts/              isolated: everything depending on plotters (or reading mode
     feature_charts.rs      binary "feature_charts", the two Phase 2 charts
     baseline_charts.rs     binary "baseline_charts", Phase 3's confusion matrix heatmaps
     scratch_charts.rs      binary "scratch_charts", Phase 4's confusion matrix heatmaps
+    kinetics_charts.rs     binary "kinetics_charts", Phase 5's simulated vs real overlay charts
 models/              isolated: everything depending on linfa/smartcore, plus the from-scratch models, lives here, not in core
   Cargo.toml
   src/lib.rs         declares metrics/tree/cart_classifier/boosting as this crate's public library
@@ -90,10 +91,16 @@ models/              isolated: everything depending on linfa/smartcore, plus the
   src/boosting.rs    from-scratch multi-class gradient boosting, built on tree.rs's regression trees
   src/bin/
     train_scratch.rs       binary "train-scratch", Phase 4, trains and evaluates the from-scratch models
+physics/             point reactor kinetics, zero-dependency ODE model, only needs core for the comparison traces
+  Cargo.toml
+  src/lib.rs         declares kinetics as this crate's public library
+  src/kinetics.rs    six-group delayed neutron point kinetics model, hand-rolled RK4 solver
+  src/bin/
+    simulate_kinetics.rs   binary "simulate-kinetics" (default), Phase 5, simulates reactivity ramps and pulls real RW/RI traces for comparison
 data/
   raw/               gitignored, fetched locally, see "Getting the data"
   features/          gitignored, Phase 2's windowed-feature CSV (~450MB, regenerable)
-  results/           checked in: eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, charts/*.svg
+  results/           checked in: eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, kinetics_results.json, charts/*.svg
 ```
 
 ## How to run
@@ -107,10 +114,12 @@ cargo run --bin extract_features -- 10 5      # same, window_size=10 rows, strid
 cargo run -p models                           # models, default, Phase 3, trains and evaluates both library-backed baselines
 cargo run -p models -- 5 3 0.2 2000           # same, with explicit window_size/stride/test_fraction/max_per_class
 cargo run -p models --bin train-scratch       # models, Phase 4, trains and evaluates both from-scratch models
+cargo run -p physics                          # physics, default, Phase 5, simulates reactivity transients
 cargo run -p charts                           # charts, default, the three Phase 1 charts
 cargo run -p charts --bin feature_charts      # charts, the two Phase 2 charts
 cargo run -p charts --bin baseline_charts     # charts, Phase 3's confusion matrix heatmaps (run models first)
 cargo run -p charts --bin scratch_charts      # charts, Phase 4's confusion matrix heatmaps (run train-scratch first)
+cargo run -p charts --bin kinetics_charts     # charts, Phase 5's comparison charts (run physics first)
 ```
 
 Everything writes into `data/results/` (and `extract_features` also writes
@@ -118,6 +127,8 @@ the large intermediate `data/features/windows.csv`). For anything beyond a
 quick check, build `models` with `cargo build --release -p models` first.
 Training on the full dataset in debug mode is noticeably slower, and Phase
 4's gradient boosting in particular is only practical in release mode.
+Phase 5's `physics` crate runs fine in debug mode either way, since it's a
+much smaller amount of computation than training a model.
 
 ## Phase 1 findings
 
@@ -248,13 +259,53 @@ Training on the full dataset in debug mode is noticeably slower, and Phase
   features on this specific pair, not an artifact of any one model's
   implementation.
 
+## Phase 5 findings
+
+- **A held positive reactivity, without feedback, just keeps growing.**
+  With no thermal feedback in this model (see `kinetics.rs`'s module
+  docs), any sustained positive reactivity eventually produces unbounded
+  exponential power growth. Early on I tried a fairly large ramp (+0.003,
+  about 46% of the total delayed neutron fraction), and by 60 seconds the
+  simulated power had grown to about 780 times its starting value. That's
+  physically correct behavior for a model with nothing to cancel the
+  applied reactivity out, but it also made the real NPPAD comparison trace
+  invisible on the same chart, just a flat line near the bottom. I ended
+  up dropping the magnitude to +/-0.0006 for the charts so both curves
+  land in a readable range together. The unbounded growth itself is worth
+  keeping in mind though, since it's exactly the gap reach goal 9
+  (thermal feedback coupling) is meant to close.
+- **The real RW trace stays essentially flat for the first 90-100 seconds,
+  then rises and turns back over.** `kinetics_rw_comparison.svg` shows
+  this clearly against the simulated curve, which climbs steadily from
+  the moment the ramp starts. NPPAD's real RW accident either has a slower
+  effective reactivity insertion than my illustrative ramp, active plant
+  control response, or both. Either way, this model has no way to capture
+  that shape yet, since it has no feedback and no control logic, just an
+  externally prescribed reactivity history.
+- **The real RI trace has a much sharper drop than the simulated one, and
+  it happens later.** `kinetics_ri_comparison.svg` shows power holding
+  near 1.0 until about t=100s, then dropping fast, down to about 0.06 by
+  t=120s. My simulated ramp declines earlier and more gradually, reaching
+  about 0.63 by t=60s. This looks like the real accident involves a sharp
+  event (a scram or a fast rod insertion) rather than a slow, steady rod
+  movement, which is a genuinely different reactivity shape than a linear
+  ramp. This comparison was never meant to be a fit (see the note field in
+  `kinetics_results.json`), and this is a good concrete example of why
+  that caveat matters.
+- **Choosing which real run to compare against turned out to matter.** My
+  first attempt picked the lowest-severity-id run for each accident type,
+  which for RI happened to be only 11 rows (about 100 seconds total, see
+  the Phase 1 README notes on run-length variability), barely enough data
+  to see anything. Switched to picking the longest-duration run per type
+  instead, which is what both comparison charts actually use now.
+
 ## Phase roadmap
 
 1. **Data & workspace setup**, loading, EDA, workspace scaffolding
 2. **Feature engineering**, rolling-window features per sensor, run-aware
 3. **Baseline classification**, `linfa` (Gaussian Naive Bayes) plus `smartcore` (Random Forest), macro F1 and confusion matrix over raw accuracy
-4. **From-scratch classifier** (current), extend CART/boosting code from C-MAPSS to multi-class
-5. **Physics module**, hand-rolled point reactor kinetics (delayed-neutron ODEs)
+4. **From-scratch classifier**, extend CART/boosting code from C-MAPSS to multi-class
+5. **Physics module** (current), hand-rolled point reactor kinetics (delayed-neutron ODEs)
 6. **Sequence modeling (stretch)**, sequence extraction plus LSTM via `candle`
 7. **Reach: out-of-distribution detection**, flag scenarios outside the known accident types
 8. **Reach: streaming/online classification**, replay NPPAD as a simulated live feed, classify incrementally

@@ -1,0 +1,22 @@
+[package]
+name = "physics"
+version = "0.1.0"
+edition = "2021"
+
+default-run = "simulate-kinetics"
+
+[[bin]]
+name = "simulate-kinetics"
+path = "src/bin/simulate_kinetics.rs"
+
+[dependencies]
+# The kinetics model itself (kinetics.rs) is zero-dependency — a hand-rolled
+# ODE system and RK4 solver, same "hand-roll the differentiating logic"
+# philosophy as models::tree and models::boosting. `core` is only needed by
+# the simulate-kinetics BINARY, to load a real NPPAD run for the
+# side-by-side comparison charts — the physics model itself doesn't touch
+# the dataset at all.
+core = { path = "../core" }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

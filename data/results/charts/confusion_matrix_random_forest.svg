@@ -1,7 +1,7 @@
 <svg width="900" height="900" viewBox="0 0 900 900" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="900" height="900" opacity="1" fill="#FFFFFF" stroke="none"/>
 <text x="450" y="25" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="17.741935483870968" opacity="1" fill="#000000">
-Random Forest: accuracy=0.914, macro F1=0.914
+Random Forest: accuracy=0.913, macro F1=0.913
 </text>
 <text x="20" y="423" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000" transform="rotate(270, 20, 423)">
 Actual (reads bottom-to-top)
@@ -239,8 +239,8 @@ TT
 <rect x="143" y="591" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="186" y="591" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="229" y="591" width="44" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="273" y="591" width="43" height="41" opacity="1" fill="#5E73B4" stroke="none"/>
-<rect x="316" y="591" width="43" height="41" opacity="1" fill="#BFC8E1" stroke="none"/>
+<rect x="273" y="591" width="43" height="41" opacity="1" fill="#6277B6" stroke="none"/>
+<rect x="316" y="591" width="43" height="41" opacity="1" fill="#BBC4DF" stroke="none"/>
 <rect x="359" y="591" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="402" y="591" width="44" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="446" y="591" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
@@ -257,8 +257,8 @@ TT
 <rect x="143" y="549" width="43" height="42" opacity="1" fill="#FAFBFD" stroke="none"/>
 <rect x="186" y="549" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="229" y="549" width="44" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="273" y="549" width="43" height="42" opacity="1" fill="#95A3CD" stroke="none"/>
-<rect x="316" y="549" width="43" height="42" opacity="1" fill="#8D9CCA" stroke="none"/>
+<rect x="273" y="549" width="43" height="42" opacity="1" fill="#97A5CF" stroke="none"/>
+<rect x="316" y="549" width="43" height="42" opacity="1" fill="#8A9AC9" stroke="none"/>
 <rect x="359" y="549" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="402" y="549" width="44" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="446" y="549" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
@@ -353,8 +353,8 @@ TT
 <rect x="402" y="340" width="44" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="446" y="340" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="489" y="340" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="532" y="340" width="44" height="42" opacity="1" fill="#314C9F" stroke="none"/>
-<rect x="576" y="340" width="43" height="42" opacity="1" fill="#EDEFF6" stroke="none"/>
+<rect x="532" y="340" width="44" height="42" opacity="1" fill="#304C9F" stroke="none"/>
+<rect x="576" y="340" width="43" height="42" opacity="1" fill="#EDF0F7" stroke="none"/>
 <rect x="619" y="340" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="662" y="340" width="43" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="705" y="340" width="44" height="42" opacity="1" fill="#FFFFFF" stroke="none"/>
@@ -410,7 +410,7 @@ TT
 <rect x="532" y="215" width="44" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="576" y="215" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="619" y="215" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="662" y="215" width="43" height="41" opacity="1" fill="#234098" stroke="none"/>
+<rect x="662" y="215" width="43" height="41" opacity="1" fill="#224098" stroke="none"/>
 <rect x="705" y="215" width="44" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="749" y="215" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="792" y="215" width="43" height="41" opacity="1" fill="#FFFFFF" stroke="none"/>
