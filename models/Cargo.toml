@@ -1,0 +1,33 @@
+[package]
+name = "models"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "train-baseline"
+path = "src/main.rs"
+
+[dependencies]
+core = { path = "../core" }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Two independent baseline model implementations, same pairing used in the
+# C-MAPSS project: linfa for a simple probabilistic baseline, smartcore for
+# a stronger tree-ensemble baseline. Comparing the two (and documenting
+# where/why they disagree) is more informative than reporting just one
+# model's numbers.
+linfa = "0.7"
+linfa-bayes = "0.7"
+ndarray = "0.15"
+smartcore = { version = "0.3", features = ["ndarray-bindings"] }
+
+# NOTE ON THE noisy_float PIN: linfa pulls in `sprs` (sparse matrix
+# support) which in turn pulls `noisy_float`. The `noisy_float` version
+# that crates.io resolves to by default uses a `const fn` feature that
+# isn't stable on this project's rustc 1.75 toolchain (a recurring sandbox
+# constraint — see the top-level README). `Cargo.lock` pins `noisy_float`
+# to 0.2.0, the last version that compiles under 1.75; if `cargo update`
+# is ever run without care, re-pin it with:
+#   cargo update -p noisy_float --precise 0.2.0

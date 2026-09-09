@@ -3,6 +3,13 @@ name = "charts"
 version = "0.1.0"
 edition = "2021"
 
+# Same reasoning as core/Cargo.toml's `default-run`: this crate now has
+# three binaries (eda-charts, feature_charts, baseline_charts — one added
+# per phase, in `src/bin/`), so plain `cargo run -p charts` needs to be
+# told which one to use when you don't pass an explicit `--bin`. Without
+# this key, Cargo refuses to guess and just lists the options instead.
+default-run = "eda-charts"
+
 [[bin]]
 name = "eda-charts"
 path = "src/main.rs"
@@ -25,3 +32,12 @@ core = { path = "../core" }
 # toolchain problem that has blocked font-dependent crates before.
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series"] }
 anyhow = "1.0"
+
+# Only needed to read data/results/baseline_results.json (written by the
+# `models` crate) for the confusion-matrix chart. This is a plain,
+# lightweight parse — it does NOT pull `models` itself (and therefore not
+# linfa/smartcore) in as a dependency, which is exactly the point: `charts`
+# only ever needs the small, already-computed JSON summary, never the heavy
+# ML crates that produced it.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

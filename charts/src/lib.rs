@@ -222,3 +222,84 @@ pub fn multi_line_chart(
     root.present()?;
     Ok(())
 }
+
+/// Draw a confusion matrix as a heatmap: rows are true labels, columns are
+/// predicted labels, and each cell's shading shows what fraction of that
+/// TRUE class's test windows landed in that predicted column (i.e. each row
+/// sums to 1.0, or 0.0 for a class with no test support at all). Rows
+/// normalized this way — rather than raw counts — keep the coloring
+/// meaningful even when classes have very different support sizes.
+pub fn confusion_matrix_heatmap(
+    title: &str,
+    labels: &[String],
+    matrix: &[Vec<usize>],
+    output_path: &str,
+) -> Result<()> {
+    let n = labels.len();
+    let root = SVGBackend::new(output_path, (900, 900)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption(title, ("sans-serif", 22))
+        .margin(20)
+        .x_label_area_size(80)
+        .y_label_area_size(80)
+        .build_cartesian_2d(0..n, 0..n)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("Predicted")
+        .y_desc("Actual (reads bottom-to-top)")
+        // Force one tick per class — plotters otherwise thins labels out
+        // when it thinks they'd overlap, which for an 18-class confusion
+        // matrix means half the class names silently disappear. This is
+        // exactly the kind of default that looks fine on a quick glance
+        // and only turns out to be wrong when you actually check the chart
+        // against the data it's supposed to represent.
+        .x_labels(n)
+        .y_labels(n)
+        .x_label_formatter(&|idx| labels.get(*idx).cloned().unwrap_or_default())
+        // NOTE: no inversion here — row `idx` is labeled `labels[idx]`
+        // directly, matching exactly how the x-axis (and Phase 1/2's bar
+        // charts) already do their labeling, which plotters centers
+        // correctly by default. An earlier version of this function tried
+        // to flip the y-axis so row 0 would read top-to-bottom, the more
+        // conventional way to draw a confusion matrix — but plotters'
+        // automatic label-centering logic doesn't invert cleanly along
+        // with a custom coordinate flip, and the result was labels
+        // shifted by half a cell from the data they were supposed to
+        // label. Reading bottom-to-top is a little less conventional, but
+        // a chart whose labels definitely line up with its data beats one
+        // that looks more standard but is subtly wrong.
+        .y_label_formatter(&|idx| labels.get(*idx).cloned().unwrap_or_default())
+        .disable_mesh()
+        .draw()?;
+
+    for (true_idx, row) in matrix.iter().enumerate() {
+        let support: usize = row.iter().sum();
+        for (pred_idx, &count) in row.iter().enumerate() {
+            let fraction = if support == 0 { 0.0 } else { count as f64 / support as f64 };
+            let color = heat_color(fraction);
+            chart.draw_series(std::iter::once(Rectangle::new(
+                [(pred_idx, true_idx), (pred_idx + 1, true_idx + 1)],
+                color.filled(),
+            )))?;
+        }
+    }
+
+    root.present()?;
+    Ok(())
+}
+
+/// Map a fraction in `[0, 1]` to a color on a plain white-to-blue scale.
+/// Hand-rolled rather than pulled from a colormap crate — it's a three-line
+/// linear interpolation, well within "hand-roll the simple stuff" territory.
+fn heat_color(fraction: f64) -> RGBColor {
+    let f = fraction.clamp(0.0, 1.0);
+    // At f=0: white (255,255,255). At f=1: a solid blue (30,60,150).
+    // Every channel is linearly interpolated between those two endpoints.
+    let r = 255.0 + (30.0 - 255.0) * f;
+    let g = 255.0 + (60.0 - 255.0) * f;
+    let b = 255.0 + (150.0 - 255.0) * f;
+    RGBColor(r.round() as u8, g.round() as u8, b.round() as u8)
+}

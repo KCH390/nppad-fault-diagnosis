@@ -1,12 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["core", "charts"]
+members = ["core", "charts", "models"]
 
 # `default-members` controls what `cargo build` / `cargo run` act on when you
 # don't pass `-p <crate>`. We only want `core` built by default: it's the
 # dependency-light crate with the data loading and EDA logic. `charts` pulls
-# in `plotters`, which is a much heavier dependency tree, so it stays opt-in
-# (`cargo run -p charts`) rather than part of the default build. This keeps
+# in `plotters`, and `models` pulls in `linfa`/`smartcore` — both much
+# heavier dependency trees, so both stay opt-in (`cargo run -p charts`,
+# `cargo run -p models`) rather than part of the default build. This keeps
 # `cargo build` fast and keeps `cargo tree` for `core` clean when we check
 # dependency hygiene after each phase.
 default-members = ["core"]
