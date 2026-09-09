@@ -77,14 +77,21 @@ charts/              isolated: everything depending on `plotters` (or reading mo
   src/bin/
     feature_charts.rs      binary "feature_charts": the two Phase 2 charts
     baseline_charts.rs     binary "baseline_charts": Phase 3's confusion matrix heatmaps
-models/              isolated: everything depending on `linfa`/`smartcore` lives here, not in core
+    scratch_charts.rs      binary "scratch_charts": Phase 4's confusion matrix heatmaps
+models/              isolated: everything depending on `linfa`/`smartcore`, plus the from-scratch models, lives here, not in core
   Cargo.toml
-  src/main.rs        binary "train-baseline": Phase 3 — trains + evaluates both baseline models
-  src/metrics.rs     hand-rolled accuracy, macro F1, confusion matrix
+  src/lib.rs         declares metrics/tree/cart_classifier/boosting as this crate's public library
+  src/main.rs        binary "train-baseline" (default): Phase 3 — trains + evaluates the library-backed baselines
+  src/metrics.rs     hand-rolled accuracy, macro F1, confusion matrix (shared by both phases' binaries)
+  src/tree.rs        from-scratch CART regression tree (variance/SSE-reduction splits), zero dependencies
+  src/cart_classifier.rs   from-scratch CART classification tree (Gini-impurity splits), zero dependencies
+  src/boosting.rs    from-scratch multi-class gradient boosting, built on tree.rs's regression trees
+  src/bin/
+    train_scratch.rs       binary "train-scratch": Phase 4 — trains + evaluates the from-scratch models
 data/
   raw/               gitignored — fetched locally, see "Getting the data"
   features/          gitignored — Phase 2's windowed-feature CSV (~450MB, regenerable)
-  results/           checked in — eda_summary.json, feature_summary.json, baseline_results.json, charts/*.svg
+  results/           checked in — eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, charts/*.svg
 ```
 
 ## How to run
@@ -95,17 +102,20 @@ From the workspace root, after fetching the data:
 cargo run                                     # core, default: Phase 1 EDA summary
 cargo run --bin extract_features              # core: Phase 2 windowed-feature extraction
 cargo run --bin extract_features -- 10 5      # same, window_size=10 rows, stride=5 rows
-cargo run -p models                           # models: Phase 3, trains + evaluates both baselines
+cargo run -p models                           # models, default: Phase 3, trains + evaluates both library-backed baselines
 cargo run -p models -- 5 3 0.2 2000           # same, with explicit window_size/stride/test_fraction/max_per_class
+cargo run -p models --bin train-scratch       # models: Phase 4, trains + evaluates both from-scratch models
 cargo run -p charts                           # charts, default: the three Phase 1 charts
 cargo run -p charts --bin feature_charts      # charts: the two Phase 2 charts
 cargo run -p charts --bin baseline_charts     # charts: Phase 3's confusion matrix heatmaps (run models first)
+cargo run -p charts --bin scratch_charts      # charts: Phase 4's confusion matrix heatmaps (run train-scratch first)
 ```
 
 Everything writes into `data/results/` (and `extract_features` also writes
 the large intermediate `data/features/windows.csv`). For anything beyond a
 quick check, build `models` with `cargo build --release -p models` first —
-training on the full dataset in debug mode is noticeably slower.
+training on the full dataset in debug mode is noticeably slower, and Phase
+4's gradient boosting in particular is only practical in release mode.
 
 ## Phase 1 findings
 
@@ -194,12 +204,52 @@ training on the full dataset in debug mode is noticeably slower.
   `support: 0` rather than silently dropping them, so it's explicit
   exactly which classes the headline number does and doesn't cover.
 
+## Phase 4 findings
+
+- **A real O(n²) performance bug, found by actually trying to train the
+  boosting model.** The first version of `best_split` (in both `tree.rs`
+  and `cart_classifier.rs`) tried every candidate threshold by calling
+  `.partition(...)` over the full row set from scratch each time — an
+  O(n) rescan per threshold, times up to n thresholds, times every
+  feature. On this project's ~300-feature windows, even a training set of
+  barely 1,000 rows didn't finish building 324 boosting trees inside a
+  several-minute timeout. Fixed by sorting each feature's values once and
+  sweeping left-to-right with running sums instead of recomputing
+  variance/Gini from scratch at every threshold — same fix in spirit as
+  the C-MAPSS project's from-scratch gradient boosting hitting a
+  comparable issue on its larger dataset. After the fix, the full pipeline
+  (7,039 train / 3,000 test windows, 324 trees) runs in under two minutes
+  in release mode.
+- **From-scratch gradient boosting nearly matches smartcore's Random
+  Forest** — macro F1 0.892 vs. 0.911 on directly comparable splits (same
+  `core::split` run-level split, same features, same evaluation code, only
+  the model implementation differs). That's a meaningful result on its
+  own: it's evidence the from-scratch implementation is actually doing
+  the right thing, not just compiling and running without crashing.
+- **A single from-scratch CART tree is a much weaker baseline than
+  boosting** — macro F1 0.673 vs. 0.892, with LR and RI both landing at
+  zero recall (`confusion_matrix_cart_scratch.svg` shows their rows
+  entirely blank). At `max_depth=8` a single tree has to carve up an
+  18-class, ~300-feature space with, at most, a few hundred leaves —
+  clearly not enough capacity for some classes to ever get a leaf of
+  their own, which boosting's additive ensemble of many shallow trees
+  doesn't run into.
+- **The LOCA/LOCAC confusion from Phase 3 shows up again here, in both
+  from-scratch models.** Same physically-similar accident pair (loss of
+  coolant, hot leg vs. cold leg), same off-diagonal block in the heatmap,
+  independent of whether the model is smartcore's Random Forest or
+  from-scratch gradient boosting. Seeing the same failure mode across
+  four independently-implemented models (two library, two from-scratch)
+  is good evidence this is a genuine limit of the mean/std/slope window
+  features on this specific pair, not an artifact of any one model's
+  implementation.
+
 ## Phase roadmap
 
 1. **Data & workspace setup** — loading, EDA, workspace scaffolding
 2. **Feature engineering** — rolling-window features per sensor, run-aware
-3. **Baseline classification** *(current)* — `linfa` (Gaussian Naive Bayes) + `smartcore` (Random Forest), macro F1 + confusion matrix over raw accuracy
-4. **From-scratch classifier** — extend CART/boosting code from C-MAPSS to multi-class
+3. **Baseline classification** — `linfa` (Gaussian Naive Bayes) + `smartcore` (Random Forest), macro F1 + confusion matrix over raw accuracy
+4. **From-scratch classifier** *(current)* — extend CART/boosting code from C-MAPSS to multi-class
 5. **Physics module** — hand-rolled point reactor kinetics (delayed-neutron ODEs)
 6. **Sequence modeling (stretch)** — sequence extraction + LSTM via `candle`
 7. **Reach: out-of-distribution detection** — flag scenarios outside the known accident types

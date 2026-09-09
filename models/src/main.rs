@@ -32,7 +32,7 @@ use smartcore::ensemble::random_forest_classifier::{
 use smartcore::linalg::basic::matrix::DenseMatrix;
 use std::collections::HashMap;
 
-mod metrics;
+use models::metrics;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
