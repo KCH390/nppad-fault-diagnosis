@@ -101,12 +101,13 @@ models/              isolated: everything depending on linfa/smartcore, plus the
   Cargo.toml
   src/lib.rs         declares metrics/tree/cart_classifier/boosting as this crate's public library
   src/main.rs        binary "train-baseline" (default), Phase 3, trains and evaluates the library-backed baselines
-  src/metrics.rs     hand-rolled accuracy, macro F1, confusion matrix (shared by both phases' binaries)
+  src/metrics.rs     hand-rolled accuracy, macro F1, confusion matrix (shared across this crate's binaries)
   src/tree.rs        from-scratch CART regression tree (variance/SSE-reduction splits), zero dependencies
   src/cart_classifier.rs   from-scratch CART classification tree (Gini-impurity splits), zero dependencies
   src/boosting.rs    from-scratch multi-class gradient boosting, built on tree.rs's regression trees
   src/bin/
     train_scratch.rs       binary "train-scratch", Phase 4, trains and evaluates the from-scratch models
+    detect_ood.rs          binary "detect-ood", Phase 7, holds out accident types entirely and tests OOD detection
 physics/             point reactor kinetics, zero-dependency ODE model, only needs core for the comparison traces
   Cargo.toml
   src/lib.rs         declares kinetics as this crate's public library
@@ -123,7 +124,7 @@ sequence/            isolated: everything depending on candle lives here, not in
 data/
   raw/               gitignored, fetched locally, see "Getting the data"
   features/          gitignored, Phase 2's windowed-feature CSV (~450MB, regenerable)
-  results/           checked in: eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, kinetics_results.json, lstm_results.json, charts/*.svg
+  results/           checked in: eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, kinetics_results.json, lstm_results.json, ood_results.json, charts/*.svg
 ```
 
 ## How to run
@@ -139,23 +140,26 @@ cargo run -p models -- 5 3 0.2 2000           # same, with explicit window_size/
 cargo run -p models --bin train-scratch       # models, Phase 4, trains and evaluates both from-scratch models
 cargo run -p physics                          # physics, default, Phase 5, simulates reactivity transients
 cargo run -p sequence                         # sequence, default, Phase 6, builds sequences, trains and evaluates the LSTM
+cargo run -p models --bin detect-ood          # models, Phase 7, holds out accident types entirely, tests OOD detection
+cargo run -p models --bin detect-ood -- 5 3 0.2 500 "FLB,SGBTR"   # same, with explicit params and OOD type list
 cargo run -p charts                           # charts, default, the three Phase 1 charts
 cargo run -p charts --bin feature_charts      # charts, the two Phase 2 charts
 cargo run -p charts --bin baseline_charts     # charts, Phase 3's confusion matrix heatmaps (run models first)
 cargo run -p charts --bin scratch_charts      # charts, Phase 4's confusion matrix heatmaps (run train-scratch first)
 cargo run -p charts --bin kinetics_charts     # charts, Phase 5's comparison charts (run physics first)
 cargo run -p charts --bin lstm_charts         # charts, Phase 6's confusion matrix heatmap (run sequence first)
+cargo run -p charts --bin ood_charts          # charts, Phase 7's known-vs-OOD distribution chart (run detect-ood first)
 ```
 
 Everything writes into `data/results/` (and `extract_features` also writes
 the large intermediate `data/features/windows.csv`). For anything beyond a
 quick check, build `models` with `cargo build --release -p models` first.
 Training on the full dataset in debug mode is noticeably slower, and Phase
-4's gradient boosting in particular is only practical in release mode.
-Phase 5's `physics` crate runs fine in debug mode either way, since it's a
-much smaller amount of computation than training a model. Phase 6's
-`sequence` crate should also be built in release mode for training, same
-reasoning as Phases 3-4.
+4's gradient boosting (and Phase 7's, which trains the same kind of model)
+is only practical in release mode. Phase 5's `physics` crate runs fine in
+debug mode either way, since it's a much smaller amount of computation
+than training a model. Phase 6's `sequence` crate should also be built in
+release mode for training, same reasoning as Phases 3-4.
 
 ## Phase 1 findings
 
@@ -356,6 +360,40 @@ reasoning as Phases 3-4.
   `scratch_charts.rs`, just applied to a larger, more important piece of
   shared logic this time. Worth knowing this exists in two places if the
   evaluation logic ever needs to change.
+
+## Phase 7 findings
+
+- **The model's own confidence really does carry OOD signal, just not a
+  perfect amount of it.** Holding out FLB and SGBTR entirely (never seen
+  during training) and looking at max softmax probability on the
+  resulting gradient boosting model: AUROC of 0.852 between known-test and
+  OOD windows, well above the 0.5 a detector with no real signal would
+  get. That's a genuinely useful result on its own, not a given, since
+  gradient-boosted trees have no built-in notion of "I've never seen
+  anything like this" the way, say, a distance-based method would.
+- **A threshold picked for a low false-alarm rate catches barely half the
+  real OOD cases.** Calibrating the detection threshold at the 5th
+  percentile of known-test max-prob (accepting about 4% of genuinely known
+  windows getting flagged) only catches 56% of the FLB/SGBTR windows.
+  `ood_max_prob_distribution.svg` shows why directly: the two groups'
+  confidence distributions are clearly shifted relative to each other, but
+  they overlap substantially in the upper range, some OOD windows get
+  confidently (and wrongly) placed into a known class anyway. AUROC being
+  good and a fixed operating point's detection rate being mediocre aren't
+  in conflict, they're both true at once, and reporting only one of them
+  would have been a much rosier, less honest picture than reporting both.
+- **Scale changed the headline number a lot, which is itself worth
+  knowing.** A first smoke-test run with small per-class caps showed a
+  93% detection rate at a 4.7% false alarm rate, a considerably better
+  result than the 56% the full-scale run produced. Small-sample OOD runs
+  can look deceptively strong; the full run against the whole dataset is
+  the one actually worth trusting and the one reported above.
+- **This says nothing about accident types NPPAD doesn't have at all.**
+  FLB and SGBTR are still PWR accidents the underlying simulator knows how
+  to produce, just ones this particular model wasn't trained on. A truly
+  novel failure mode outside PCTRAN's own modeling (say, a multi-system
+  interaction the simulator was never built to represent) is a different
+  and harder question this experiment doesn't speak to.
 
 ## Phase roadmap
 

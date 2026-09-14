@@ -100,17 +100,27 @@ impl GradientBoostedClassifier {
     }
 
     pub fn predict(&self, x: &[Vec<f64>]) -> Vec<usize> {
-        x.iter().map(|row| self.predict_one(row)).collect()
+        x.iter().map(|row| argmax(&self.predict_proba_one(row))).collect()
     }
 
-    fn predict_one(&self, row: &[f64]) -> usize {
+    /// Predict per-class probabilities (softmax over the ensemble's raw
+    /// scores) for a batch of rows, rather than collapsing straight to
+    /// the winning class. Needed for reach-goal work like Phase 7's
+    /// out-of-distribution detection, which cares about HOW CONFIDENT the
+    /// model was in its top pick, not just which class that pick was —
+    /// `predict` alone throws that information away.
+    pub fn predict_proba(&self, x: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        x.iter().map(|row| self.predict_proba_one(row)).collect()
+    }
+
+    fn predict_proba_one(&self, row: &[f64]) -> Vec<f64> {
         let mut scores = vec![0.0; self.n_classes];
         for round_trees in &self.trees {
             for (k, tree) in round_trees.iter().enumerate() {
                 scores[k] += self.learning_rate * tree.predict_one(row);
             }
         }
-        argmax(&scores)
+        softmax(&scores)
     }
 }
 

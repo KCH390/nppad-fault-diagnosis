@@ -27,3 +27,19 @@ serde_json = "1.0"
 # exact API shape, only the plumbing around it does.
 candle-core = "0.7"
 candle-nn = "0.7"
+
+# KNOWN RESOLUTION ISSUE: candle-core 0.7.2's own source uses the `rand
+# 0.8` API directly (`rand::distributions::Uniform`), but several of its
+# other dependencies (rayon-core, safetensors's zip dependency, etc.) pull
+# in `rand 0.9` and a matching `half` release built against it. Cargo is
+# happy to resolve both `rand` versions into the dependency graph at once
+# (that's allowed), but `half`'s f16/bf16 types then don't implement the
+# `rand 0.8` traits candle-core's code expects, which surfaces as
+# `SampleUniform`/`SampleBorrow` compile errors inside candle-core itself,
+# not in this crate's own code. If you hit that, force the resolver back
+# onto the rand-0.8-compatible version set:
+#   cargo update -p half --precise 2.4.1
+#   cargo update -p rand_distr --precise 0.4.3
+#   cargo update -p rand --precise 0.8.5
+# then rebuild. This is a candle-core/half ecosystem version mismatch, not
+# anything specific to this project's own code.
