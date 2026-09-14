@@ -58,16 +58,31 @@ it.
 cargo update -p noisy_float --precise 0.2.0
 ```
 
+`sequence`'s `candle-core` dependency has a separate, unrelated version
+mismatch: several of its own dependencies pull in `rand 0.9`-compatible
+`half` builds while candle-core's source code itself uses the `rand 0.8`
+API directly. If `cargo build -p sequence` fails inside `candle-core`
+with `SampleUniform`/`SampleBorrow` trait errors, re-pin those three
+crates back onto the rand-0.8-compatible set (see the comment in
+`sequence/Cargo.toml` for the full explanation):
+
+```
+cargo update -p half --precise 2.4.1
+cargo update -p rand_distr --precise 0.4.3
+cargo update -p rand --precise 0.8.5
+```
+
 ## Workspace structure
 
 ```
-Cargo.toml          workspace manifest (core + charts + models + physics members)
+Cargo.toml          workspace manifest (core + charts + models + physics + sequence members)
 core/                dependency-light: data loading, EDA, features, splitting, CLIs
   Cargo.toml
-  src/lib.rs         declares data/eda/features/split as this crate's public library
+  src/lib.rs         declares data/eda/features/sequences/split as this crate's public library
   src/data.rs        parses NPPAD CSVs into a Vec<Sample>, normalized to one canonical sensor schema
   src/eda.rs         class-balance and run-duration stats over a Vec<Sample>
   src/features.rs    rolling-window feature engineering (mean/std/slope per sensor, run-aware)
+  src/sequences.rs   fixed-length, normalized sequence construction per run, for Phase 6's LSTM
   src/split.rs       run-level train/test split plus per-class subsampling
   src/main.rs        binary "nppad-fault-diagnosis" (default), Phase 1 EDA summary
   src/bin/
@@ -81,6 +96,7 @@ charts/              isolated: everything depending on plotters (or reading mode
     baseline_charts.rs     binary "baseline_charts", Phase 3's confusion matrix heatmaps
     scratch_charts.rs      binary "scratch_charts", Phase 4's confusion matrix heatmaps
     kinetics_charts.rs     binary "kinetics_charts", Phase 5's simulated vs real overlay charts
+    lstm_charts.rs         binary "lstm_charts", Phase 6's confusion matrix heatmap
 models/              isolated: everything depending on linfa/smartcore, plus the from-scratch models, lives here, not in core
   Cargo.toml
   src/lib.rs         declares metrics/tree/cart_classifier/boosting as this crate's public library
@@ -97,10 +113,17 @@ physics/             point reactor kinetics, zero-dependency ODE model, only nee
   src/kinetics.rs    six-group delayed neutron point kinetics model, hand-rolled RK4 solver
   src/bin/
     simulate_kinetics.rs   binary "simulate-kinetics" (default), Phase 5, simulates reactivity ramps and pulls real RW/RI traces for comparison
+sequence/            isolated: everything depending on candle lives here, not in core
+  Cargo.toml
+  src/lib.rs         declares lstm/metrics as this crate's public library
+  src/lstm.rs         LSTM classifier built on candle-nn's LSTM layer plus a final linear layer
+  src/metrics.rs      hand-rolled accuracy, macro F1, confusion matrix (duplicated from models::metrics to keep candle isolated)
+  src/bin/
+    train_lstm.rs          binary "train-lstm" (default), Phase 6, builds sequences, trains and evaluates the LSTM
 data/
   raw/               gitignored, fetched locally, see "Getting the data"
   features/          gitignored, Phase 2's windowed-feature CSV (~450MB, regenerable)
-  results/           checked in: eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, kinetics_results.json, charts/*.svg
+  results/           checked in: eda_summary.json, feature_summary.json, baseline_results.json, scratch_results.json, kinetics_results.json, lstm_results.json, charts/*.svg
 ```
 
 ## How to run
@@ -115,11 +138,13 @@ cargo run -p models                           # models, default, Phase 3, trains
 cargo run -p models -- 5 3 0.2 2000           # same, with explicit window_size/stride/test_fraction/max_per_class
 cargo run -p models --bin train-scratch       # models, Phase 4, trains and evaluates both from-scratch models
 cargo run -p physics                          # physics, default, Phase 5, simulates reactivity transients
+cargo run -p sequence                         # sequence, default, Phase 6, builds sequences, trains and evaluates the LSTM
 cargo run -p charts                           # charts, default, the three Phase 1 charts
 cargo run -p charts --bin feature_charts      # charts, the two Phase 2 charts
 cargo run -p charts --bin baseline_charts     # charts, Phase 3's confusion matrix heatmaps (run models first)
 cargo run -p charts --bin scratch_charts      # charts, Phase 4's confusion matrix heatmaps (run train-scratch first)
 cargo run -p charts --bin kinetics_charts     # charts, Phase 5's comparison charts (run physics first)
+cargo run -p charts --bin lstm_charts         # charts, Phase 6's confusion matrix heatmap (run sequence first)
 ```
 
 Everything writes into `data/results/` (and `extract_features` also writes
@@ -128,7 +153,9 @@ quick check, build `models` with `cargo build --release -p models` first.
 Training on the full dataset in debug mode is noticeably slower, and Phase
 4's gradient boosting in particular is only practical in release mode.
 Phase 5's `physics` crate runs fine in debug mode either way, since it's a
-much smaller amount of computation than training a model.
+much smaller amount of computation than training a model. Phase 6's
+`sequence` crate should also be built in release mode for training, same
+reasoning as Phases 3-4.
 
 ## Phase 1 findings
 
@@ -298,6 +325,37 @@ much smaller amount of computation than training a model.
   the Phase 1 README notes on run-length variability), barely enough data
   to see anything. Switched to picking the longest-duration run per type
   instead, which is what both comparison charts actually use now.
+
+## Phase 6 notes
+
+- **A fixed sequence length is a new requirement Phases 2-4 didn't have.**
+  Windowing (Phase 2) sidestepped run-length variability by working on
+  short, fixed-size slices of each run. An LSTM classifying a whole run at
+  once needs every training example to be the same length so they can be
+  batched into one tensor. `core::sequences` truncates longer runs to the
+  first `seq_len` rows (keeping the accident's onset, which is where most
+  of the distinguishing signal lives, rather than a long near-steady-state
+  tail) and pads shorter runs by repeating the last observed row rather
+  than zero-padding, since zero-padding would look to the model like a
+  sudden, physically nonsensical jump to every sensor reading exactly 0.
+- **Normalization matters here in a way it didn't for the tree models.**
+  Phases 3-4's trees split on one feature at a time, so it doesn't matter
+  if `PWR` is a percentage and `TAVG` is a temperature in the hundreds.
+  An LSTM's gates mix every input feature together in the same linear
+  layer, so raw NPPAD sensor units sitting on wildly different scales
+  would let some features dominate purely because of their units, not
+  their actual signal. `core::sequences::NormalizationStats` z-score
+  normalizes every sensor, fit on the training split only, same "no
+  leakage from test data" discipline as the run-level split itself.
+- **`sequence::metrics` duplicates `models::metrics` rather than importing
+  it.** Depending on the `models` crate as a library would pull `linfa`
+  and `smartcore` into `sequence`'s dependency tree along with it, since
+  Cargo resolves a whole crate's dependencies regardless of which modules
+  you actually use. Same "duplication over cross-crate dependency"
+  tradeoff already used in `charts`' `baseline_charts.rs` and
+  `scratch_charts.rs`, just applied to a larger, more important piece of
+  shared logic this time. Worth knowing this exists in two places if the
+  evaluation logic ever needs to change.
 
 ## Phase roadmap
 

@@ -1,0 +1,29 @@
+[package]
+name = "sequence"
+version = "0.1.0"
+edition = "2021"
+
+default-run = "train-lstm"
+
+[[bin]]
+name = "train-lstm"
+path = "src/bin/train_lstm.rs"
+
+[dependencies]
+core = { path = "../core" }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# `candle-core` is the tensor/autodiff library, `candle-nn` provides the
+# LSTM layer, linear layers, optimizers, and loss functions built on top
+# of it, the Rust-native equivalent of what PyTorch's `torch` + `torch.nn`
+# split provides. Pinned to a specific minor version since candle's public
+# API (particularly around `candle_nn::rnn`) has shifted across releases.
+# If `cargo build` reports a signature mismatch against whatever version
+# actually resolves, check the installed version's docs.rs page for
+# `candle_nn::rnn::LSTM`/`RNN` and adjust call sites accordingly. The
+# underlying LSTM math implemented in `lstm.rs` doesn't depend on the
+# exact API shape, only the plumbing around it does.
+candle-core = "0.7"
+candle-nn = "0.7"
